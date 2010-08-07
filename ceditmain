@@ -762,6 +762,8 @@ proc PaintWork {x y c} {
 		if {$interior != $tc} {set wall 1} {
 		# else
 			.grid.c itemconf $t -fill $c
+                        forw put "$c" -to $lx $ly
+                        mirr put "$c" -to [expr $mx-$lx-1] $ly
 			if {[GetColor $lx [expr $ly-1]] == $interior} {
 				PaintWork $lx [expr $ly-1] $c
 			}
@@ -779,6 +781,8 @@ proc PaintWork {x y c} {
 		if {$interior != $tc} {set wall 1} {
 		# else
 			.grid.c itemconf $t -fill $c
+                        forw put "$c" -to $lx $ly
+                        mirr put "$c" -to [expr $mx-$lx-1] $ly
 			if {[GetColor $lx [expr $ly-1]] == $interior} {
 				PaintWork $lx [expr $ly-1] $c
 			}
