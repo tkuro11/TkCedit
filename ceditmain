@@ -1,0 +1,1036 @@
+#!/bin/sh
+# Character Editor for X-base Games   T.kurosawa 96'Aug
+#  $Id: ceditmain,v 2.1 96/08/23 16:27:50 kuro Exp Locker: kuro $
+#\
+exec wish "$0" "$@"
+
+# Setup
+option add *font -adobe-helvetica-bold-r-normal--*-120-*-*-*-*-*-*
+set mx [lindex $argv 0]
+set my [lindex $argv 1]
+set mc [lindex $argv 2]
+set x_8 [expr $mx*8]
+set y_8 [expr $my*8]
+set color_space "hsb"
+set colors_inrow 32
+set changed 0
+set sc_x 0
+set sc_y 0
+set Progname "Character Editor"
+
+wm title . "$Progname (Untitled)"
+
+image create photo tmp
+
+# Define Color-set
+
+set palet_table {darkgrey red green blue yellow cyan purple white \
+darkred darkgreen darkblue yellow darkcyan purple gray black}
+set grid_color grey
+
+if {[file exist $env(HOME)/.ceditrc]} {
+	source  $env(HOME)/.ceditrc
+}
+
+if {$colors_inrow > $mc} {
+	set colors_inrow $mc
+}
+
+frame .menu -border 1 -relief ridge
+menubutton .menu.file -text File -menu .menu.file.m -underline 0
+menubutton .menu.edit -text Edit -menu .menu.edit.m -underline 0
+pack .menu -fill x
+
+#######################################
+# Here are chunks of File Menu's compo.
+#######################################
+menu .menu.file.m
+.menu.file.m add command -label "Open" -command {Open ""} -underline 0
+bind . <Alt-o> {Open ""} 
+.menu.file.m add command -label "Save" -command {Save $Filename} -underline 0
+bind . <Alt-s> {Save $Filename} 
+.menu.file.m add command -label "Save As" -command {
+	if {[set filename [Select]] != ""} {Save $filename}} -underline 5
+bind . <Alt-a> {if{[set filename [Select]]!= ""} {Save $filename}}
+.menu.file.m add separator
+.menu.file.m add command -label "Load Palet" -command {LoadPalet} -underline 0
+bind . <Alt-l> {LoadPalet}
+.menu.file.m add command -label "Save Palet" -command {SavePalet} -underline 5
+bind . <Alt-p> {SavePalet}
+.menu.file.m add separator
+.menu.file.m add command -label "Quit" -command {Exit} -underline 0
+bind . <Alt-q> {Exit}
+pack .menu.file -anchor w -side left
+
+proc TitleSet {} {global Progname Filename;wm title . "$Progname ($Filename)"}
+
+proc CopyToGrid {} {
+	global mx my
+	set ly [expr $my-1]
+	set i 1
+	for {set y 0} {$y < $my} {incr y 1} {
+	  set i [expr $y*$mx+1]
+	  for {set x 0} {$x < $mx} {incr x 1} {
+		set comp [eval format "#%02x%02x%02x" [forw get $x $y]]
+		.grid.c itemconf $i -fill $comp
+		incr i 1
+	  }
+	}
+	for {set x 0} {$x < $mx} {incr x 1} {
+	  mirr copy forw -from $x 0 [expr $x+1] $my \
+		-to [expr $mx-$x-1] 0 [expr $mx-$x] $my
+	}
+	mirr redither
+}
+
+proc InitGrid {} {
+	global sc_x sc_y mx my
+
+	set lx [expr $mx-1]
+	set ly [expr $my-1]
+	for {set x 0} {$x < $mx} {incr x 1} {
+		if {$x < $sc_x} {
+			.grid.c move x$x [expr -($mx-$sc_x)*8] 0
+		} {
+			.grid.c move x$x [expr $sc_x*8] 0
+		}
+	}
+	for {set y 0} {$y < $my} {incr y 1} {
+		if {$y < $sc_y} {
+			.grid.c move y$y 0 [expr -($my-$sc_y)*8]
+		} {
+			.grid.c move y$y 0 [expr $sc_y*8]
+		}
+	}
+	set sc_x 0
+	set sc_y 0
+}
+
+proc Open {openfile} {
+	global Filename
+	if {$openfile == ""} {
+		set openfile [FileDialog "Open File" "*.ppm"]
+	}
+	if {$openfile != ""} {
+		forw read $openfile
+		update idletasks
+		set Filename $openfile
+		TitleSet
+		. conf -cursor watch
+		.grid.c conf -cursor watch
+		InitGrid
+		CopyToGrid
+		. conf -cursor ""
+		.grid.c conf -cursor left_ptr
+	}
+
+}
+
+proc Exit {} {
+	global changed Filename
+	if {$changed == 1} {
+		switch [SaveP] {
+		0
+		  {if {[Save $Filename] == 0} {destroy .} {return}}
+		2 
+		  {return}
+		}
+	}
+	destroy .
+}
+
+proc SaveP {} {
+	return [tk_dialog .quit "QUIT DIALOG" \
+		"Image have been changed. Do you want ..." \
+	question 0 "Save it" "Leave it alone" "Cancel"]
+}
+
+proc Select {} {
+	set filename [FileDialog "Save As" "*.ppm"]
+	return $filename
+}
+
+proc Save {filename} {
+	global changed Filename Progname
+	if {$filename == ""} {
+		set filename [FileDialog "Save" "*.ppm"]
+	}
+	if {$filename != ""} {
+		if {[file exist $filename]} {
+			if {[tk_dialog .ok "Override OK?" \
+				"Override existing file $Filename?" \
+				question 0 "Yes" "No"] == 1} {return 1}
+		}
+		set Filename $filename
+		forw write $Filename -format ppm 
+		TitleSet
+		set changed 0
+		return 0
+	} {
+#		tk_dialog .not "No name" "No filename Specified." error 0 "OK" 
+		return 1
+	}
+}
+
+proc LoadPalet {} {
+	global mc palet_file
+
+	if {$palet_file == ""} {
+		set palet_file [FileDialog "Load Palet" "*$mc.pal"]
+	}
+
+	if {$palet_file != "" && [file exist $palet_file]} {
+		set fd [open $palet_file ]
+		for {set i 0} {$i < $mc} {incr i 1} {
+			scan [gets $fd] "%d %d %d" r g b
+			set comp [format "#%04x%04x%04x" $r $g $b]
+			.color.b$i conf -bg $comp
+		}
+		close $fd
+	}
+}
+
+proc SavePalet {} {
+	global mc
+
+	set paletfile [FileDialog "Save Palet" "*$mc.pal"]
+
+	if {$paletfile != ""} {
+		if {[file exist $paletfile]} {
+			if {[ tk_dialog .ok "Override OK?" \
+				"Override existing file $paletfile ?" \
+				question 0 "Yes" "No" ] == 1} return
+		}
+		set fd [open $paletfile "w"]
+		for {set i 0} {$i < $mc} {incr i 1} {
+			set c [.color.b$i cget -bg]
+			set list [winfo rgb .color.b$i $c]
+			puts $fd $list
+		}
+		close $fd
+	}
+}
+
+# What a dirty code !
+proc FileDialog {name wild} {
+	global w ret chd
+	set w .saved
+	toplevel $w
+	wm geometry $w +300+300
+	wm title $w $name
+	frame $w.f1
+	frame $w.f1.box
+	frame $w.f2
+	frame $w.f2.box
+	frame $w.f3
+	label $w.f1.l1 -text "File Name"
+	entry $w.f1.e1 -relief ridge -bd 2 -width 20
+	bind $w.f1.e1 <Return> {set ret [$w.f1.e1 get]; destroy $w}
+	global listb listb2
+	set listb $w.f1.box.listbox
+	scrollbar $w.f1.box.scroll -bd 2 -relief ridge \
+		-command "$listb yview"
+	listbox $listb -width 20 -height 10 -bd 2 -relief ridge \
+		-yscrollcommand "$w.f1.box.scroll set"
+	bind $listb <1> {$listb selection clear 0 end;
+		$listb selection set [$listb nearest %y]
+		setfile}
+	bind $listb <Double-1> {set ret [$w.f1.e1 get]; destroy $w}
+	radiobutton $w.f1.all -variable filemask -text "All" -value "*" \
+		-command {getfile}
+	radiobutton $w.f1.wild -variable filemask -text "$wild" -value "$wild" \
+		-command {getfile}
+
+	label $w.f2.l1 -text "Directory Name"
+	entry $w.f2.e1 -relief ridge -bd 2 -width 20
+	bind $w.f2.e1 <Return> {set chd [$w.f2.e1 get]; changedir}
+	set listb2 $w.f2.box.listbox
+	scrollbar $w.f2.box.scroll -bd 2 -relief ridge \
+		-command "$listb2 yview"
+	listbox $listb2 -width 20 -height 10 -bd 2 -relief ridge \
+		-yscrollcommand "$w.f2.box.scroll set"
+	bind $listb2 <1> {$listb2 selection clear 0 end; $listb2 selection set \
+		[$listb2 nearest %y]; setdir}
+	bind $listb2 <Double-1> {changedir}
+
+	button $w.f3.b1 -text "OK" -command {set ret [$w.f1.e1 get];destroy $w}
+	button $w.f3.b2 -text "Cancel" -command {set ret "";destroy $w}
+
+	pack $w.f1 $w.f2 -side left -anchor n
+	pack $w.f1.box.listbox $w.f1.box.scroll -in $w.f1.box -side left \
+		-pady 1m -pady 1m -fill y 
+	pack $w.f1.l1 -in $w.f1 -side top -padx 1m -pady 1m
+	pack $w.f1.e1 -in $w.f1 -side top -padx 2m -pady 1m -anchor w
+	pack $w.f1.box -in $w.f1 -side top -padx 1m -pady 1m
+	pack $w.f1.all $w.f1.wild -in $w.f1 -side left -padx 1m -pady 1m
+
+	pack $w.f2.box.listbox $w.f2.box.scroll -in $w.f2.box -side left \
+		-pady 1m -pady 1m -fill y
+	pack $w.f2.l1 -in $w.f2 -side top -padx 1m -pady 1m
+	pack $w.f2.e1 -in $w.f2 -side top -padx 2m -pady 1m -anchor w
+	pack $w.f2.box -in $w.f2 -side top -padx 1m -pady 1m
+
+	pack $w.f3.b1 $w.f3.b2 -side top -padx 1m -pady 2m -anchor w
+	pack $w.f1 $w.f2 $w.f3 -side left -fill y
+
+
+	global filemask dirmask
+	set filemask $wild
+	set dirmask "*"
+
+
+# Belows look like a local functions but the truth is NOT.
+# They would be mapped to global layer :(
+
+	proc getfile {} {
+		global w filemask
+		$w.f1.box.listbox delete 0 end
+		if {[ catch {set filelist [glob $filemask]} ]} {
+			set filelist ""
+		}
+		foreach i $filelist {
+			if {[file isfile $i]} {
+				$w.f1.box.listbox insert end $i
+			}
+		}
+	}
+
+	proc setfile {} {
+		global w
+		set index [$w.f1.box.listbox curselection]
+		set data [$w.f1.box.listbox get $index]
+		$w.f1.e1 delete 0 end
+		$w.f1.e1 insert 0 $data
+	}
+
+	proc getdir {} {
+		global dirmask w
+
+		$w.f2.e1 delete 0 end
+		$w.f2.e1 insert 0 [pwd]
+		$w.f2.box.listbox delete 0 end
+		if {[ catch {set dirlist [glob $dirmask]} ]} {
+			set dirlist ""
+		}
+		$w.f2.box.listbox insert end ..
+		foreach i $dirlist {
+			if {[file isdirectory $i]} {
+				$w.f2.box.listbox insert end $i
+			}
+		}
+	}
+
+	proc setdir {} {
+		global w chd
+		set index [$w.f2.box.listbox curselection]
+		set data [$w.f2.box.listbox get $index]
+		set chd $data
+	}
+
+	proc changedir {} {
+		global w chd
+		catch {cd $chd}
+		getfile
+		getdir
+	}
+	$w.f2.e1 delete 0 end
+	$w.f2.e1 insert 0 [pwd]
+	getfile
+	getdir
+
+	update idletasks
+	grab $w
+	tkwait window $w
+	return $ret
+}
+
+#######################################
+# Here are chunks of Edit Menu's compo.
+#######################################
+menu .menu.edit.m
+.menu.edit.m add command -label "Clear" -command {Clear} -underline 1
+bind . <Alt-c> {Clear} 
+.menu.edit.m add command -label "Copy" -command {Copy} -underline 0
+bind . <Alt-o> {Copy} 
+.menu.edit.m add command -label "Paste V" -command {
+	if {[Select] != ""} {Save}} -underline 6
+bind . <Alt-v> {if {[Select] != ""} {Save}}
+.menu.edit.m add separator
+pack .menu.edit -anchor w -side left
+
+proc Clear {} {
+	global mx my changed
+	set c [.color.b0 cget -bg]
+	set fin [expr $mx*$my]
+	for {set i 0} {$i <= $fin} {incr i 1} {
+		.grid.c itemconf $i -fill $c
+	}
+	forw put $c -to 0 0 $mx $my
+	mirr put $c -to 0 0 $mx $my
+	set changed 0
+}
+
+###################
+#	Main
+###################
+frame .bot
+frame .grid
+frame .switch
+frame .pers
+frame .color -height 30
+
+pack .bot .color -side top -fill x
+pack .grid .pers .switch -side left -in .bot
+
+set frameno 0
+set nlayer [expr int(($mc-1.0)/$colors_inrow)+1]
+set tic [expr (1.0/$colors_inrow)]
+for {set i 0} {$i < $mc} {incr i 1} {
+ if {[expr $i%$colors_inrow] == 0} {
+	incr frameno 1 
+	frame .color.$frameno -height 30
+	pack .color.$frameno -fill x
+ }
+ set loc [lindex $palet_table $i]
+ if {$loc == ""} {set loc "white"}
+ label .color.b$i -background $loc -border 2 -relief raise
+ bind .color.b$i <ButtonPress> ".color.b$i conf -relief sunken"
+ bind .color.b$i <B1-Motion>   ". conf -cursor sb_h_double_arrow"
+ bind .color.b$i <ButtonRelease-1> "Rel $i %X %Y 1"
+ bind .color.b$i <ButtonRelease-2> "Rel $i %X %Y 2"
+ bind .color.b$i <ButtonRelease-3> "Rel $i %X %Y 1"
+ bind .color.b$i <Double-Button-1> "ChangeColor $i %X %Y"
+ bind .color.b$i <Control-Button-1> ".color.b$i conf -bg \$c1"
+ place .color.b$i -relx [expr ($i%$colors_inrow)*$tic] -relwidth $tic\
+	-relheight .8 -in .color.$frameno
+}
+
+proc Rel {no x y bu} {
+	set rwin [winfo contain $x $y]
+	if {".color.b$no" == $rwin} {
+		ButtonSetColor $no $bu
+	} {
+		if {[regexp \.color\.b(\[0-9\]+) $rwin dm sub]} {
+			Gradation $no $sub
+		}
+		.color.b$no conf -relief raise
+	}
+	. conf -cursor ""
+}
+
+proc Gradation {from to} {
+	Order from to 100
+	set fc [.color.b$from cget -bg]
+	set tc [.color.b$to cget -bg]
+	set flist [winfo rgb . $fc]
+	set tlist [winfo rgb . $tc]
+	set r [lindex $flist 0]
+	set g [lindex $flist 1]
+	set b [lindex $flist 2]
+	set tr [lindex $tlist 0]
+	set tg [lindex $tlist 1]
+	set tb [lindex $tlist 2]
+	set dr [expr ($tr-$r)/($to-$from)]
+	set dg [expr ($tg-$g)/($to-$from)]
+	set db [expr ($tb-$b)/($to-$from)]
+
+	for {set i [expr $from+1]} {$i < $to} {incr i 1} {
+		incr r $dr
+		incr g $dg
+		incr b $db
+		set comp [format "#%04x%04x%04x" $r $g $b]
+		.color.b$i conf -bg $comp
+	}
+}
+
+if {[info exist palet_file]} {
+	LoadPalet
+} {
+	set palet_file ""
+}
+
+proc ButtonSetColor {no bu} {
+	.color.b$no configure -relief raise
+	set c [.color.b$no cget -bg]
+	SetColor $c $bu
+}
+
+proc SetColor {c bu} {
+	global c1 c2 c3
+	set list [winfo rgb . $c]
+	set r [expr 65535-[lindex $list 0]]
+	set g [expr 65535-[lindex $list 1]]
+	set b [expr 65535-[lindex $list 2]]
+	set comp [format "#%04x%04x%04x" $r $g $b]
+	.l$bu configure -background $c -foreground $comp
+	set c$bu $c
+}
+
+set colorSpace $color_space
+proc ChangeColor {no x y} {
+	global red green blue colorSpace  color_space
+	toplevel .colorc
+	wm geometry .colorc +$x+$y
+	set c [.color.b$no cget -background]
+	set list [winfo rgb .color.b$no $c]
+	set red [lindex $list 0]
+	set green [lindex $list 1]
+	set blue [lindex $list 2]
+	frame .colorc.left 
+	label .colorc.left.rr -textvariable label1
+	label .colorc.left.gg -textvariable label2
+	label .colorc.left.bb -textvariable label3
+	scale .colorc.left.r -orient horizontal -length 136 \
+		-command ScaleChanged -to 1000
+	scale .colorc.left.g -orient horizontal -length 136 \
+		-command ScaleChanged -to 1000
+	scale .colorc.left.b -orient horizontal -length 136 \
+		-command ScaleChanged -to 1000
+	.colorc.left.r set [expr 1000*$red/65536]
+	.colorc.left.g set [expr 1000*$green/65536]
+	.colorc.left.b set [expr 1000*$blue/65536]
+	radiobutton .colorc.rgb -text "RGB" -variable colorSpace\
+		-value rgb -command {changeColorSpace rgb}
+	radiobutton .colorc.cmy -text "CMY" -variable colorSpace\
+		-value cmy -command {changeColorSpace cmy}
+	radiobutton .colorc.hsb -text "HSB" -variable colorSpace\
+		-value hsb -command {changeColorSpace hsb}
+	changeColorSpace $colorSpace
+	frame .colorc.color -width 80 -height 80
+	pack .colorc.left .colorc.color -side left
+	pack .colorc.left.r .colorc.left.rr .colorc.left.g
+	pack .colorc.left.gg .colorc.left.b .colorc.left.bb
+	set comp [format "#%04x%04x%04x" $red $green $blue]
+	button .colorc.confirm -text "Confirm" \
+		-command ".color.b$no conf -bg \$comp ;\
+			grab release .colorc; destroy .colorc"
+	button .colorc.cancel -text "Cancel" \
+		-command {grab release .colorc ; destroy .colorc}
+	pack .colorc.cancel .colorc.confirm \
+		.colorc.hsb .colorc.cmy .colorc.rgb -side bottom -pady 3
+	update idletasks
+	grab .colorc
+}
+
+label .l1  -text 1
+label .l2  -text 2
+
+ButtonSetColor 1 1
+ButtonSetColor 0 2
+
+pack .l2 .l1 -side right  -in .menu
+
+# Making Grid
+
+canvas .grid.c -width $x_8 -height $y_8 -background $c2\
+	-cursor left_ptr -highlightthickness 0
+for {set y 0} {$y < $y_8} {incr y 8} {
+ for {set x 0} {$x < $x_8} {incr x 8} {
+  .grid.c create rectangle $x $y [expr $x+8] [expr $y+8] -outline {} \
+	-tag "x[expr $x/8] y[expr $y/8]" -fill $c2
+ }
+}
+
+.grid.c create rectangle -9 -9 -9 -9 -tag box
+
+for {set x 0} {$x < $x_8} {incr x 8} {
+  .grid.c create line $x 0 $x $y_8 -fill $grid_color -tag grid
+}
+for {set y 0} {$y < $y_8} {incr y 8} {
+  .grid.c create line 0 $y $x_8 $y -fill $grid_color -tag grid
+}
+set gridstate on
+if {[info exist grid]} {
+	if {$grid != "on"} {
+		set gridstate off
+		.grid.c move grid $x_8 $y_8
+	}
+}
+
+pack .grid.c -padx 20 -pady 20
+
+image create photo forw -width $mx -height $my
+image create photo mirr -width $mx -height $my
+
+if {$argc == 4} {
+	set Filename [lindex $argv 3]
+	Open $Filename
+} {
+	set Filename "" 
+	forw put $c2 -to 0 0 $mx $my
+	mirr put $c2 -to 0 0 $mx $my
+}
+
+label .pers.forward -image forw -border 2 -relief ridge 
+label .pers.mirror  -image mirr -border 2 -relief ridge
+
+pack .pers.forward .pers.mirror -side top -pady 10 -padx 10
+
+proc SetPoint {x y c} {
+	global mx my changed sc_x sc_y
+	set rx [expr ($x-2)/8]
+	set ry [expr ($y-2)/8]
+	set lx [expr ($rx+$sc_x)%$mx]
+	set ly [expr ($ry+$sc_y)%$my]
+	if {$rx >= 0 && $ry >= 0 && $rx < $mx && $ry < $my} {
+	set p [expr $lx+$ly*$mx+1]
+	.grid.c itemconfigure $p -fill $c
+	forw put "$c" -to $rx $ry
+	mirr put "$c" -to [expr $mx-$rx-1] $ry
+	set changed 1
+	}
+}
+
+#######################################
+# Making Function Button
+#######################################
+
+
+proc BitmapSetup {} {
+set UpName "#define Up_width 14
+#define Up_height 14
+static unsigned char Up_bits[] = {
+   0x80, 0x01, 0x40, 0x03, 0xa0, 0x06, 0x50, 0x0d,
+   0xa8, 0x1a, 0x54, 0x35, 0xbe, 0x7e, 0x40, 0x05, 0xa0, 0x06, 0x40, 0x05,
+   0xa0, 0x06, 0x40, 0x05, 0xe0, 0x07, 0x00, 0x00};"
+set LeftName "#define Lef_width 14
+#define Lef_height 14
+static unsigned char Lef_bits[] = {
+   0x00, 0x01, 0x80, 0x01, 0x40, 0x01, 0xa0, 0x01, 0x50, 0x55,
+   0xa8, 0x6a, 0x54, 0x55, 0xac, 0x6a, 0x58, 0x55, 0xb0, 0x7f, 0x60, 0x01,
+   0xc0, 0x01, 0x80, 0x01, 0x00, 0x01};"
+set RightName "#define Right_width 14
+#define Right_height 14
+static unsigned char Right_bits[] = {
+   0x80, 0x00, 0x80, 0x01, 0x80, 0x02, 0x80, 0x05, 0xaa, 0x0a,
+   0x56, 0x15, 0xaa, 0x2a, 0x56, 0x35, 0xaa, 0x1a, 0xfe, 0x0d, 0x80, 0x06,
+   0x80, 0x03, 0x80, 0x01, 0x80, 0x00};"
+set DownName "#define Down_width 14
+#define Down_height 14
+static unsigned char Down_bits[] = {
+   0x00, 0x00, 0xe0, 0x07, 0x40, 0x05, 0xa0, 0x06, 0x40, 0x05, 0xa0, 0x06,
+   0x40, 0x05, 0xbe, 0x7e, 0x54, 0x35, 0xa8, 0x1a, 0x50, 0x0d, 0xa0, 0x06,
+   0x40, 0x03, 0x80, 0x01};"
+
+image create bitmap UpArrow -data $UpName
+image create bitmap LeftArrow -data $LeftName
+image create bitmap RightArrow -data $RightName
+image create bitmap DownArrow -data $DownName
+}
+
+BitmapSetup
+button .switch.grid -text "Grid\nOn/Off" -command {
+if {$gridstate == "on"} {
+	.grid.c move grid $x_8 $y_8
+	set gridstate off
+} {
+	.grid.c move grid -$x_8 -$y_8
+	set gridstate on
+} }
+
+label .switch.l -text "Tool:" -anchor w
+label .switch.blank -text ""
+menubutton .switch.tools -menu .switch.tools.m -textvariable tool \
+	-anchor center -relief ridge -border 4 -bg grey -fg darkblue \
+	-activeforeground blue -justify center
+
+set m .switch.tools.m 
+menu $m -tearoff 1 -relief ridge -fg darkblue -bg grey \
+	-activeforeground blue 
+$m add radio -label Dot -command {Dot} \
+	-value Dot -variable tool
+$m add radio -label Box -command {Box} \
+	-value Box -variable tool
+$m add radio -label Paint -command {Paint} \
+	-value Paint -variable tool
+#$m add radio -label "Region " -command {Region} \
+#-value Region -variable tool
+
+proc GridOff {} {
+	global gridstate x_8 y_8
+	if {$gridstate == "on"} {.grid.c move grid $x_8 $y_8}
+}
+proc GridOn {} {
+	global gridstate x_8 y_8
+	if {$gridstate == "on"} {.grid.c move grid -$x_8 -$y_8}
+}
+bind .grid.c <ButtonPress-3> {
+	.grid.c conf -cursor hand2
+	GridOff
+	SetColor [.grid.c itemcget [.grid.c find close %x %y] -fill ] 1
+	GridOn
+}
+bind .grid.c <ButtonRelease-3> {.grid.c conf -cursor ""}
+
+proc ClearBind {} {
+	bind .grid.c <ButtonPress-1> {}
+	bind .grid.c <ButtonPress-2> {}
+	bind .grid.c <ButtonRelease-1> {}
+	bind .grid.c <ButtonRelease-2> {}
+	bind .grid.c <B1-Motion> {}
+	bind .grid.c <B2-Motion> {}
+}
+
+proc Dot {} {
+	ClearBind
+	bind .grid.c <ButtonPress-1> {SetPoint %x %y $c1}
+	bind .grid.c <ButtonPress-2> {SetPoint %x %y $c2}
+	bind .grid.c <B1-Motion> {SetPoint %x %y $c1}
+	bind .grid.c <B2-Motion> {SetPoint %x %y $c2}
+}
+set tool "Dot"
+Dot
+
+proc Box {} {
+	global c1 c2 c3 changed sc_x sc_y BoxSX BoxSY
+	ClearBind
+	.grid.c itemconf box -width 0 -outline {}
+	set BPress { 
+		set BoxSX [expr %x/8*8]
+		set BoxSY [expr %y/8*8]
+		set BoxC $c%b
+		.grid.c itemconf box -fill $c%b
+	}
+	bind .grid.c <ButtonPress-1> $BPress
+	bind .grid.c <ButtonPress-2> $BPress
+	bind .grid.c <B1-Motion> {BoxMotion %x %y}
+	bind .grid.c <B2-Motion> {BoxMotion %x %y}
+	bind .grid.c <ButtonRelease-1> {BoxWork}
+	bind .grid.c <ButtonRelease-2> {BoxWork}
+}
+proc BoxMotion {x y} {
+	global BoxSX BoxSY BoxEX BoxEY
+	set BoxEX [expr $x/8*8]
+	set BoxEY [expr $y/8*8]
+	.grid.c coord box $BoxSX $BoxSY $BoxEX $BoxEY
+}
+proc BoxWork {} {
+	global BoxSX BoxSY BoxEX BoxEY changed mx my BoxC sc_x sc_y
+	.grid.c coord box -9 -9 -9 -9
+	set BSX [expr $BoxSX/8]
+	set BSY [expr $BoxSY/8]
+	set BEX [expr $BoxEX/8]
+	set BEY [expr $BoxEY/8]
+	Order BSX BEX $mx
+	Order BSY BEY $my
+	GridOff
+	.grid.c addtag tmp enclose $BoxSX $BoxSY $BoxEX $BoxEY
+	GridOn
+	.grid.c itemconf tmp -fill $BoxC
+	.grid.c dtag tmp
+	forw put $BoxC -to $BSX $BSY $BEX $BEY
+	mirr put $BoxC -to [expr $mx-$BSX] $BSY [expr $mx-$BEX] $BEY
+	set changed 1
+}
+proc Order {s e m} {
+	upvar $s S
+	upvar $e E
+	if {$S < 0} {set S 0}
+	if {$E < 0} {set E 0}
+	if {$S >= $m} {set S $m}
+	if {$E >= $m} {set E $m}
+	if {$S > $E} {
+		set t $S
+		set S $E
+		set E $t
+	}
+}
+
+proc Paint {} {
+	global c1 c2
+	ClearBind
+	bind .grid.c <ButtonPress-1> {PaintWork [expr %x/8] [expr %y/8] $c1}
+	bind .grid.c <ButtonPress-2> {PaintWork [expr %x/8] [expr %y/8] $c2}
+}
+proc GetColor {x y} {
+	return [.grid.c itemcget [TranPoint $x $y] -fill]
+}
+    
+proc PaintWork {x y c} {
+	global mx my
+
+	if {$y < 0 || $my < $y} {return };
+	set lx $x
+	set ly $y
+
+	set interior [GetColor $lx $ly]
+#-->
+	set wall 0
+	for {set lx $x} {$lx<$mx && $wall==0} {incr lx 1} {
+		set t [TranPoint $lx $ly]
+		set tc [.grid.c itemcget $t -fill]
+		if {$interior != $tc} {set wall 1} {
+		# else
+			.grid.c itemconf $t -fill $c
+			if {[GetColor $lx [expr $ly-1]] == $interior} {
+				PaintWork $lx [expr $ly-1] $c
+			}
+			if {[GetColor $lx [expr $ly+1]] == $interior} {
+				PaintWork $lx [expr $ly+1] $c
+			} 
+		}
+	}
+#<--
+	set ly $y
+	set wall 0
+	for {set lx [expr $x-1]} {$lx>=0 && $wall==0} {incr $lx -1} {
+		set t [TranPoint $lx $ly]
+		set tc [.grid.c itemcget $t -fill]
+		if {$interior != $tc} {set wall 1} {
+		# else
+			.grid.c itemconf $t -fill $c
+			if {[GetColor $lx [expr $ly-1]] == $interior} {
+				PaintWork $lx [expr $ly-1] $c
+			}
+			if {[GetColor $lx [expr $ly+1]] == $interior} {
+				PaintWork $lx [expr $ly+1] $c
+			} 
+		}
+	}
+}
+
+proc TranPoint {x y} {
+	global mx my sc_x sc_y
+	return [expr ($sc_x+$x)%$mx+(($sc_y+$y)%$my)*$mx+1]
+}
+
+
+
+#button .switch.change -text "Color\nChange" -command {Change}
+
+frame .switch.slide -relief ridge -border 2
+frame .switch.slide.mid
+pack .switch.l .switch.tools .switch.blank -fill x -anchor n
+pack .switch.grid .switch.slide -side top -fill x
+
+button .switch.slide.up -image UpArrow -command {Up}
+button .switch.slide.mid.left -image LeftArrow -command {Left}
+button .switch.slide.mid.right -image RightArrow -command {Right}
+button .switch.slide.down -image DownArrow -command {Down}
+pack .switch.slide.mid.left .switch.slide.mid.right -side left \
+	-expand 1 -fill x
+pack .switch.slide.up .switch.slide.mid .switch.slide.down\
+	-side top -fill x
+
+proc Up {} {
+        global mx my sc_x sc_y
+	set lx [expr $mx-1]
+	set ly [expr $my-1]
+	tmp copy forw
+	forw copy tmp -from 0 1 $mx $my -to 0 0
+	forw copy tmp -from 0 0 $mx 1 -to 0 $ly
+	tmp copy mirr 
+	mirr copy tmp -from 0 1 $mx $my -to 0 0
+	mirr copy tmp -from 0 0 $mx 1 -to 0 $ly
+	for {set i 1} {$i < $my} {incr i 1} {
+		.grid.c addtag mving withtag y[expr ($i+$sc_y)%$my]
+	}
+	.grid.c move mving 0 -8
+	.grid.c dtag mving
+	.grid.c move y$sc_y 0 [expr 8*$ly]
+	set sc_y [expr ($sc_y+1)%$my]
+}
+proc Down {} {
+        global mx my sc_x sc_y
+	set lx [expr $mx-1]
+	set ly [expr $my-1]
+	tmp copy forw 
+	forw copy tmp -from 0 0 $mx $ly -to 0 1
+	forw copy tmp -from 0 $ly $mx $my -to 0 0
+	tmp copy mirr 
+	mirr copy tmp -from 0 0 $mx $ly -to 0 1
+	mirr copy tmp -from 0 $ly $mx $my -to 0 0
+	for {set i 0} {$i < $ly} {incr i 1} {
+		.grid.c addtag mving withtag y[expr ($i+$sc_y)%$my]
+	}
+	.grid.c move mving 0 8
+	.grid.c dtag mving
+	.grid.c move y[expr ($sc_y+$ly)%$my] 0 [expr -8*$ly]
+	set sc_y [expr ($sc_y-1)%$my]
+}
+proc Left {} {
+        global mx my sc_x sc_y
+	set lx [expr $mx-1]
+	set ly [expr $my-1]
+	tmp copy forw 
+	forw copy tmp -from 1 0 $mx $my -to 0 0
+	forw copy tmp -from 0 0 1 $my -to $lx 0
+	tmp copy mirr 
+	mirr copy tmp -from 0 0 $lx $my -to 1 0
+	mirr copy tmp -from $lx 0 $mx $my -to 0 0
+	for {set i 1} {$i < $mx} {incr i 1} {
+		.grid.c addtag mving withtag x[expr ($i+$sc_x)%$mx]
+	}
+	.grid.c move mving -8 0
+	.grid.c dtag mving
+	.grid.c move x$sc_x [expr 8*$lx] 0
+	set sc_x [expr ($sc_x+1)%$mx]
+}
+proc Right {} {
+        global mx my sc_x sc_y
+	set lx [expr $mx-1]
+	set ly [expr $my-1]
+	tmp copy forw 
+	forw copy tmp -from 0 0 $lx $my -to 1 0
+	forw copy tmp -from $lx 0 $mx $my -to 0 0
+	tmp copy mirr 
+	mirr copy tmp -from 1 0 $mx $my -to 0 0
+	mirr copy tmp -from 0 0 1 $my -to $lx 0
+	for {set i 0} {$i < $lx} {incr i 1} {
+		.grid.c addtag mving withtag x[expr ($i+$sc_x)%$mx]
+	}
+	.grid.c move mving 8 0
+	.grid.c dtag mving
+	.grid.c move x[expr ($sc_x+$lx)%$mx] [expr -8*$lx] 0
+	set sc_x [expr ($sc_x-1)%$mx]
+}
+
+update idletasks
+wm minsize . [winfo width .] [winfo height .]
+
+
+
+
+
+#################################################################
+# Codes below came from Tk4.0 distribution's sample-code "tcolor"
+#  (modified a bit)
+# @(#) tcolor 1.8 95/07/18 16:21:42
+#################################################################
+
+proc hsbToRgb {hue sat value} {
+	set v [format %.0f [expr 65535.0*$value]]
+	if {$sat == 0} {
+		return "$v $v $v"
+	} else {
+		set hue [expr $hue*6.0]
+		if {$hue >= 6.0} {
+			set hue 0.0
+		}
+		scan $hue. %d i
+		set f [expr $hue-$i]
+		set p [format %.0f [expr {65535.0*$value*(1 - $sat)}]]
+		set q [format %.0f [expr {65535.0*$value*(1 - ($sat*$f))}]]
+	    set t [format %.0f [expr {65535.0*$value*(1 - ($sat*(1 - $f)))}]]
+		case $i \
+			0 {return "$v $t $p"} \
+			1 {return "$q $v $p"} \
+			2 {return "$p $v $t"} \
+			3 {return "$p $q $v"} \
+			4 {return "$t $p $v"} \
+			5 {return "$v $p $q"}
+		error "i value $i is out of range"
+	}
+}
+
+proc changeColorSpace space {
+	global label1 label2 label3 colorSpace
+    if {$space == "rgb"} {
+	set label1 Red
+	set label2 Green
+	set label3 Blue
+	setScales
+	return
+    }
+    if {$space == "cmy"} {
+	set label1 Cyan
+	set label2 Magenta
+	set label3 Yellow
+	setScales
+	return
+    }
+    if {$space == "hsb"} {
+	set label1 Hue
+	set label2 Saturation
+	set label3 Brightness
+	setScales
+	return
+    }
+}
+
+proc setScales {} {
+	global red green blue colorSpace
+	if {$colorSpace == "rgb"} {
+		.colorc.left.r set [format %.0f [expr $red/65.535]]
+		.colorc.left.g set [format %.0f [expr $green/65.535]]
+		.colorc.left.b set [format %.0f [expr $blue/65.535]]
+	} else {
+		if {$colorSpace == "cmy"} {
+		.colorc.left.r set [format %.0f [expr (65535-$red)/65.535]]
+		.colorc.left.g set [format %.0f [expr (65535-$green)/65.535]]
+		.colorc.left.b set [format %.0f [expr (65535-$blue)/65.535]]
+		} else {
+			set list [rgbToHsv $red $green $blue]
+		.colorc.left.r set [format %.0f [expr {[lindex $list 0] * 1000.0}]]
+		.colorc.left.g set [format %.0f [expr {[lindex $list 1] * 1000.0}]]
+		.colorc.left.b set [format %.0f [expr {[lindex $list 2] * 1000.0}]]
+		}
+	}
+}
+
+proc rgbToHsv {red green blue} {
+    if {$red > $green} {
+        set max $red.0
+        set min $green.0
+    } else {
+        set max $green.0
+        set min $red.0
+    }
+    if {$blue > $max} {
+        set max $blue.0
+    } else {
+        if {$blue < $min} {
+            set min $blue.0
+        }
+    }
+    set range [expr $max-$min]
+    if {$max == 0} {
+        set sat 0
+    } else {
+        set sat [expr {($max-$min)/$max}]
+    }
+    if {$sat == 0} {
+        set hue 0
+    } else {
+        set rc [expr {($max - $red)/$range}]
+        set gc [expr {($max - $green)/$range}]
+        set bc [expr {($max - $blue)/$range}]
+        if {$red == $max} {
+            set hue [expr {.166667*($bc - $gc)}]
+        } else {
+            if {$green == $max} {
+                set hue [expr {.166667*(2 + $rc - $bc)}]
+            } else {
+                set hue [expr {.166667*(4 + $gc - $rc)}]
+            }
+        }
+        if {$hue < 0.0} {
+            set hue [expr $hue + 1.0]
+        }
+    }
+    return [list $hue $sat [expr {$max/65535}]]
+}
+
+proc ScaleChanged args {
+	global red green blue colorSpace comp
+	if {$colorSpace == "rgb"} {
+		set red   [format %.0f [expr [.colorc.left.r get]*65.535]]
+		set green [format %.0f [expr [.colorc.left.g get]*65.535]]
+		set blue  [format %.0f [expr [.colorc.left.b get]*65.535]]
+	} else {
+	    if {$colorSpace == "cmy"} {
+	set red   [format %.0f [expr {65535 - [.colorc.left.r get]*65.535}]]
+	set green [format %.0f [expr {65535 - [.colorc.left.g get]*65.535}]]
+	set blue  [format %.0f [expr {65535 - [.colorc.left.b get]*65.535}]]
+	    } else {
+		set list [hsbToRgb [expr {[.colorc.left.r get]/1000.0}] \
+			[expr {[.colorc.left.g get]/1000.0}] \
+			[expr {[.colorc.left.b get]/1000.0}]]
+		set red [lindex $list 0]
+		set green [lindex $list 1]
+		set blue [lindex $list 2]
+	}
+    }
+	set comp [format "#%04x%04x%04x" $red $green $blue]
+	.colorc.color conf -background $comp
+}

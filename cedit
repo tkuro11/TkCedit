@@ -1,0 +1,73 @@
+#!/bin/sh
+# FrontEnd  of Character Editor
+#  $Id: cedit,v 1.5 1996/08/14 06:34:13 kuro Exp kuro $
+#\
+exec wish "$0" "$@"
+
+wm resizable . 0 0
+set init_x	16
+set init_y	16
+set init_num_colors	16
+set dir [file dirname $argv0]
+
+if { [ file exist $env(HOME)/.ceditrc ] } {
+	source $env(HOME)/.ceditrc
+}
+
+if { $argc >= 1 } {
+	image create photo tmp
+	foreach name $argv {
+		tmp read $name
+		exec $dir/ceditmain [image width tmp] [image height tmp]\
+			$init_num_colors $name &
+	}
+	image delete tmp
+}
+
+proc change {x arg} {
+	if { $x == "c" } {
+	.e$x configure -text [expr int(pow(2,$arg))]
+	} else {
+	.e$x delete 0 end
+	.e$x insert 0 $arg
+	}
+}
+
+###
+wm title . "Character Editor"
+frame .line1 -relief raise  -bd  3
+frame .line2 -relief raise  -bd  3
+frame .line3 -relief raise  -bd  3
+frame .bot -relief flat 
+pack .line1 .line2 .line3 -anchor w -fill x
+pack .bot -fill x
+
+label .lx -text "Width"  -width 8
+label .ly -text "Height" -width 8
+label .lc -text "Color" -width 8 
+scale .sx -orient horizontal -showvalue 0 -command "change x"\
+	-length 136 -from 1 -to 96
+.sx set $init_x
+scale .sy -orient horizontal -showvalue 0 -command "change y"\
+	-length 136 -from 1 -to 96
+.sy set $init_y
+scale .sc -orient horizontal -showvalue 0 -command "change c" -to 7 \
+	-length 136 -from 2
+.sc set [expr (log($init_num_colors)/log(2))]
+entry .ex -width 6
+entry .ey -width 6
+label .ec -width 6
+
+bind .ex <Return> {.sx set [.ex get]}
+bind .ey <Return> {.sy set [.ey get]}
+
+button .create -text "Create" \
+	-command {exec $dir/ceditmain [.ex get] [.ey get] [.ec cget -text] &}
+button .quit -text "Quit" -command "destroy ."
+
+pack .lx .sx .ex -side left -in .line1 
+pack .ly .sy .ey -side left -in .line2 
+pack .lc .sc .ec -side left -in .line3 -anchor w
+
+pack .create .quit -side left -in .bot -expand 1
+

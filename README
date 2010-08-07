@@ -1,0 +1,45 @@
+Character Editor using Tcl/Tk
+
+./README    ...  this file
+./cedit     ...  launcher
+./ceditmain ...  main program
+
+INSTALL::
+Just copy ./cedit & ./ceditmain to the same directory.
+Somewhere on your PATH recommended.
+
+USAGE::
+At command line 
+ % cedit 
+opens launcher. you can specify image size.
+Push "Create" exec main program.
+
+In the main program window, the most large part 
+on the left side which is sub-divided by grid, 
+called sketch-region.  In there, you can use the 
+selected tool(Dot, Box, Paint) by pushing mouse 
+button-1 and -2.
+Tools are followings. It can be selected by clicking
+on Tool drop-down-button on the right top,
+	Dot:: draw point
+	Box:: fill rectangle
+	Paint:: flood fill
+button-3 is a spuit-tool.
+
+Grid On/Off toggle grid visibility.
+
+Below the Grid On/Off, there're arrow buttons.
+Click on the arrows cause entire image to shift 
+a pixel for corresponding direction.
+
+In the most bottom part, there's color-pallet.
+Clicking on color-pallet changes current color. Current
+color for mouse-1, -2 are displayed at top right corner. 
+reversly, clicking on pallet with ctrl-key pressed, 
+current color is copied to pallet.
+And dragging mouse between two pallet causes gradation.
+
+Double-click on pallet button opens Color Change Dialog.
+you can change color indivisually. Colors can be specified
+in RGB, CMY, HSV. 
+
