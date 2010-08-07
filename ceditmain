@@ -773,7 +773,7 @@ proc PaintWork {x y c} {
 #<--
 	set ly $y
 	set wall 0
-	for {set lx [expr $x-1]} {$lx>=0 && $wall==0} {incr $lx -1} {
+	for {set lx [expr $x-1]} {$lx>=0 && $wall==0} {incr lx -1} {
 		set t [TranPoint $lx $ly]
 		set tc [.grid.c itemcget $t -fill]
 		if {$interior != $tc} {set wall 1} {
