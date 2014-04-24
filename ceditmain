@@ -42,7 +42,7 @@ menubutton .menu.edit -text Edit -menu .menu.edit.m -underline 0
 pack .menu -fill x
 
 #######################################
-# Here are chunks of File Menu's compo.
+# File Menu's
 #######################################
 menu .menu.file.m
 .menu.file.m add command -label "Open" -command {Open ""} -underline 0
@@ -211,7 +211,7 @@ proc SavePalet {} {
 	}
 }
 
-# What a dirty code !
+# What a dirty code ! NOT TO BE FIXED
 proc FileDialog {name wild} {
 	global w ret chd
 	set w .saved
@@ -345,7 +345,7 @@ proc FileDialog {name wild} {
 }
 
 #######################################
-# Here are chunks of Edit Menu's compo.
+# Edit Menu's
 #######################################
 menu .menu.edit.m
 .menu.edit.m add command -label "Clear" -command {Clear} -underline 1
